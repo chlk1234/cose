@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "COSE - 多平台文章同步",
-  "version": "1.1.6",
+  "version": "1.1.8",
   "description": "Create Once, Sync Everywhere. 一键将文章同步到多个平台",
   "permissions": [
     "tabGroups",
@@ -42,7 +42,8 @@
     "https://*.huaweicloud.com/*",
     "https://developer.huawei.com/*",
     "https://*.x.com/*",
-    "https://*.twitter.com/*"
+    "https://*.twitter.com/*",
+    "https://qianfan.cloud.baidu.com/*"
   ],
   "action": {
     "default_icon": {
