@@ -37,10 +37,26 @@ const closePanelBtn = document.getElementById('close-panel-btn');
 const cancelBtn = document.getElementById('cancel-btn');
 const saveBtn = document.getElementById('save-btn');
 const platformsContainer = document.getElementById('platforms-container');
+const selectAllCheckbox = document.getElementById('select-all-checkbox');
 const historyBtn = document.getElementById('history-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const refreshBtn = document.getElementById('refresh-btn');
 const loginStatus = document.getElementById('login-status');
+
+function updateSelectAllCheckboxState() {
+    if (!selectAllCheckbox) {
+        return;
+    }
+    const optionCheckboxes = platformsContainer.querySelectorAll('input[type="checkbox"]');
+    if (!optionCheckboxes.length) {
+        selectAllCheckbox.checked = false;
+        return;
+    }
+    const allChecked = Array.from(optionCheckboxes).every(function(option) {
+        return option.checked;
+    });
+    selectAllCheckbox.checked = allChecked;
+}
 
 // 初始化：从本地存储加载已选择的平台，如果没有则使用默认的前6个平台
 function initSelectedPlatforms() {
@@ -63,10 +79,119 @@ function initSelectedPlatforms() {
     renderPlatformList();
 }
 
+const COSE_PLATFORM_LOGIN_STATUS = 'cose_platform_login_status';
+
+let loginStatusTimer = null;
+
 // 保存已选择的平台到本地存储
 function saveSelectedPlatforms() {
     const platformIds = selectedPlatforms.map(platform => platform.id);
     localStorage.setItem('cose_selected_platforms', JSON.stringify(platformIds));
+}
+
+function checkSelectedPlatformsLoginStatus(forceCheck = false) {
+    if (!selectedPlatforms.length || !chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
+        return;
+    }
+    if (loginStatusTimer) {
+        clearTimeout(loginStatusTimer);
+        loginStatusTimer = null;
+    }
+
+    loginStatus.textContent = '登录检测中...';
+    loginStatus.style.color = '#fa8c16';
+
+    // Load cached status
+    let cachedStatus = {};
+    try {
+        const saved = localStorage.getItem(COSE_PLATFORM_LOGIN_STATUS);
+        if (saved) {
+            cachedStatus = JSON.parse(saved);
+        }
+    } catch (e) {
+        console.error('Failed to parse cached status:', e);
+    }
+
+    const now = Date.now();
+    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+    const platformsToCheck = [];
+
+    selectedPlatforms.forEach(platform => {
+        const cache = cachedStatus[platform.id];
+        const hasAccountInfo = cache && (cache.username || cache.avatar);
+        if (!forceCheck && hasAccountInfo && (now - cache.timestamp < CACHE_DURATION)) {
+            platform.loggedIn = cache.loggedIn;
+            platform.username = cache.username;
+            platform.avatar = cache.avatar;
+        } else {
+            platformsToCheck.push({ id: platform.id });
+            if (cache && hasAccountInfo) {
+                platform.loggedIn = cache.loggedIn;
+                platform.username = cache.username;
+                platform.avatar = cache.avatar;
+            }
+        }
+    });
+
+    // If nothing to check, update global status and return
+    if (platformsToCheck.length === 0) {
+        const loggedInCount = selectedPlatforms.filter(p => p.loggedIn).length;
+        const delay = 500 + Math.floor(Math.random() * 1000);
+        loginStatusTimer = setTimeout(function() {
+            renderPlatformList();
+            loginStatus.textContent = '登录检测完成';
+            loginStatus.style.color = loggedInCount > 0 ? '#52c41a' : '#fa8c16';
+        }, delay);
+        return;
+    }
+
+    renderPlatformList();
+
+    chrome.runtime.sendMessage(
+        { type: 'CHECK_PLATFORM_STATUS', platforms: platformsToCheck },
+        function(response) {
+            if (!response || !response.status) {
+                loginStatus.textContent = '登录检测失败';
+                loginStatus.style.color = '#f5222d';
+                return;
+            }
+
+            const status = response.status || {};
+            const timestamp = Date.now();
+
+            // Update platforms and cache
+            platformsToCheck.forEach(p => {
+                const s = status[p.id] || {};
+                const platform = selectedPlatforms.find(sp => sp.id === p.id);
+                if (platform) {
+                    platform.loggedIn = !!s.loggedIn;
+                    platform.username = s.username || '';
+                    platform.avatar = s.avatar || '';
+                    
+                    // Update cache object
+                    cachedStatus[platform.id] = {
+                        loggedIn: platform.loggedIn,
+                        username: platform.username,
+                        avatar: platform.avatar,
+                        timestamp: timestamp
+                    };
+                }
+            });
+
+            // Save back to local storage
+            localStorage.setItem(COSE_PLATFORM_LOGIN_STATUS, JSON.stringify(cachedStatus));
+
+            // Re-render with new data
+            renderPlatformList();
+            
+            const loggedInCount = selectedPlatforms.filter(function(p) {
+                return p.loggedIn;
+            }).length;
+            loginStatus.textContent = '登录检测完成';
+            loginStatus.style.color = loggedInCount > 0 ? '#52c41a' : '#fa8c16';
+        }
+    );
 }
 
 // 渲染主界面的平台列表
@@ -111,12 +236,29 @@ function renderPlatformList() {
             iconElement = `<div class="platform-icon" style="background-color: ${bgColor};">${platform.icon}</div>`;
         }
         
+        const isLoggedIn = !!platform.loggedIn;
+        const displayName = platform.username || '';
+        let accountContent = '';
+        if (isLoggedIn) {
+            if (platform.avatar) {
+                const safeName = displayName || '';
+                const safeAvatar = platform.avatar;
+                accountContent = `<div class="account-display"><img class="account-avatar" src="${safeAvatar}"><span class="account-name">@${safeName}</span></div>`;
+            } else if (displayName) {
+                accountContent = `<span class="account-name">@${displayName}</span>`;
+            } else {
+                accountContent = '<span class="account-name">已登录</span>';
+            }
+        } else {
+            accountContent = '<a class="login-link">登录</a>';
+        }
+        
         platformItem.innerHTML = `
             ${iconElement}
             <div class="platform-info">
                 <span class="platform-name">${platform.title}</span>
                 <div class="account-info">
-                    ${platform.hasAccount ? platform.account : '<a class="login-link">登录</a>'}
+                    ${accountContent}
                 </div>
             </div>
         `;
@@ -131,26 +273,84 @@ function renderPlatformList() {
             const platformItem = this.closest('.platform-item');
             const platformId = platformItem.dataset.id;
             const platform = PLATFORMS.find(p => p.id === platformId);
-            
-            if (platform) {
-                alert(`跳转到 ${platform.name} 登录页面（演示）`);
-                // 模拟登录成功
-                const accountInfo = platformItem.querySelector('.account-info');
-                
-				if(platform.id){
-					let account ='@' + platform.id+'_user';
-					accountInfo.innerHTML = account;
-					platform.hasAccount = true;
-					platform.account = account;
-				} 
-                
-                // 更新本地存储
-                saveSelectedPlatforms();
+
+            if (!platform) {
+                return;
             }
+
+            if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
+                if (chrome && chrome.tabs && chrome.tabs.create) {
+                    chrome.tabs.create({ url: platform.url });
+                } else {
+                    window.open(platform.url, '_blank');
+                }
+                return;
+            }
+
+            loginStatus.textContent = '登录检测中...';
+            loginStatus.style.color = '#fa8c16';
+
+            chrome.runtime.sendMessage(
+                { type: 'CHECK_PLATFORM_STATUS', platforms: [{ id: platform.id }] },
+                function(response) {
+                    if (!response || !response.status) {
+                        if (chrome && chrome.tabs && chrome.tabs.create) {
+                            chrome.tabs.create({ url: platform.url });
+                        } else {
+                            window.open(platform.url, '_blank');
+                        }
+                        return;
+                    }
+
+                    const status = response.status || {};
+                    const s = status[platform.id] || {};
+                    const loggedIn = !!s.loggedIn;
+                    const username = s.username || '';
+                    const avatar = s.avatar || '';
+
+                    let cachedStatus = {};
+                    try {
+                        const saved = localStorage.getItem(COSE_PLATFORM_LOGIN_STATUS);
+                        if (saved) {
+                            cachedStatus = JSON.parse(saved);
+                        }
+                    } catch (err) {
+                    }
+
+                    const timestamp = Date.now();
+                    cachedStatus[platform.id] = {
+                        loggedIn: loggedIn,
+                        username: username,
+                        avatar: avatar,
+                        timestamp: timestamp
+                    };
+                    localStorage.setItem(COSE_PLATFORM_LOGIN_STATUS, JSON.stringify(cachedStatus));
+
+                    const selected = selectedPlatforms.find(p => p.id === platform.id);
+                    if (selected) {
+                        selected.loggedIn = loggedIn;
+                        selected.username = username;
+                        selected.avatar = avatar;
+                    }
+
+                    if (loggedIn) {
+                        renderPlatformList();
+                        const loggedInCount = selectedPlatforms.filter(function(p) {
+                            return p.loggedIn;
+                        }).length;
+                        loginStatus.textContent = '登录检测完成';
+                        loginStatus.style.color = loggedInCount > 0 ? '#52c41a' : '#fa8c16';
+                    } else {
+                        if (chrome && chrome.tabs && chrome.tabs.create) {
+                            chrome.tabs.create({ url: platform.url });
+                        } else {
+                            window.open(platform.url, '_blank');
+                        }
+                    }
+                }
+            );
         });
     });
-    
-    // 移除平台项的点击事件，因为不再需要勾选框功能
 }
 
 // 渲染添加平台面板中的平台选项
@@ -193,8 +393,32 @@ function renderPlatformOptions() {
             </div>
         `;
         
+        // 点击整行触发勾选
+        platformOption.addEventListener('click', function(e) {
+            // 如果直接点击的是复选框，则不需要处理，因为它自己会变
+            if (e.target.tagName === 'INPUT' && e.target.type === 'checkbox') {
+                return;
+            }
+            
+            const checkbox = this.querySelector('input[type="checkbox"]');
+            if (checkbox) {
+                checkbox.checked = !checkbox.checked;
+                // 手动改变checked状态不会触发change事件，需要手动触发以更新全选框状态
+                checkbox.dispatchEvent(new Event('change'));
+            }
+        });
+        
         platformsContainer.appendChild(platformOption);
     });
+    
+    const optionCheckboxes = platformsContainer.querySelectorAll('input[type="checkbox"]');
+    optionCheckboxes.forEach(function(checkbox) {
+        checkbox.addEventListener('change', function() {
+            updateSelectAllCheckboxState();
+        });
+    });
+    
+    updateSelectAllCheckboxState();
 }
 
 // 打开添加平台面板
@@ -233,6 +457,7 @@ function savePlatformSelection() {
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
+    //console.log('DOMContentLoaded事件触发');
     // 强制设置body尺寸
     document.body.style.width = '350px';
     document.body.style.height = '400px';
@@ -249,6 +474,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 初始化已选择的平台
     initSelectedPlatforms();
+    checkSelectedPlatformsLoginStatus();
     
     // 事件监听
     addPlatformBtn.addEventListener('click', openAddPlatformPanel);
@@ -268,22 +494,25 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 刷新按钮点击事件
     refreshBtn.addEventListener('click', function() {
-        loginStatus.textContent = '刷新中...';
-        loginStatus.style.color = '#fa8c16';
-        
-        setTimeout(() => {
-            loginStatus.textContent = '登录检测完成';
-            loginStatus.style.color = '#52c41a';
-            alert('平台状态已刷新！');
-        }, 800);
+        checkSelectedPlatformsLoginStatus(true);
     });
     
     // 登录状态文字点击事件
     loginStatus.addEventListener('click', function() {
         const platformCount = selectedPlatforms.length;
-        const loggedInCount = selectedPlatforms.filter(p => p.hasAccount).length;
+        const loggedInCount = selectedPlatforms.filter(p => p.loggedIn).length;
         alert(`当前状态：已选择 ${platformCount} 个平台，${loggedInCount} 个已登录`);
     });
+    
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            const checked = selectAllCheckbox.checked;
+            const optionCheckboxes = platformsContainer.querySelectorAll('input[type="checkbox"]');
+            optionCheckboxes.forEach(function(option) {
+                option.checked = checked;
+            });
+        });
+    }
     
     // 防止弹窗被拉伸
     window.addEventListener('resize', function() {

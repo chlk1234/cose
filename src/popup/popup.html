@@ -184,6 +184,24 @@
             max-width: 120px; /* 限制最大宽度 */
         }
         
+        .account-display {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .account-avatar {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        
+        .account-name {
+            font-size: 12px;
+            color: #333;
+        }
+        
         .login-link {
             color: #1890ff;
             cursor: pointer;
@@ -258,6 +276,7 @@
             align-items: center;
             padding: 10px 12px;
             border-bottom: 1px solid #f5f5f5;
+            cursor: pointer;
         }
         
         .platform-option:last-child {
@@ -303,7 +322,20 @@
             padding: 12px;
             border-top: 1px solid #e8e8e8;
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-actions-left {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #333;
+        }
+        
+        .panel-actions-right {
+            display: flex;
             gap: 8px;
         }
         
@@ -422,8 +454,14 @@
             </div>
             
             <div class="panel-actions">
-                <button class="panel-btn cancel-btn" id="cancel-btn">取消</button>
-                <button class="panel-btn save-btn" id="save-btn">保存</button>
+                <label class="panel-actions-left">
+                    <input type="checkbox" id="select-all-checkbox">
+                    <span>全选</span>
+                </label>
+                <div class="panel-actions-right">
+                    <button class="panel-btn cancel-btn" id="cancel-btn">取消</button>
+                    <button class="panel-btn save-btn" id="save-btn">保存</button>
+                </div>
             </div>
         </div>
     </div>
