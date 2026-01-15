@@ -1,0 +1,89 @@
+{
+  "manifest_version": 3,
+  "name": "COSE - 多平台文章同步",
+  "version": "1.1.8",
+  "description": "Create Once, Sync Everywhere. 一键将文章同步到多个平台",
+  "permissions": [
+    "tabGroups",
+    "activeTab",
+    "scripting",
+    "cookies",
+    "debugger",
+    "clipboardRead",
+	"storage"
+  ],
+  "host_permissions": [
+    "https://*.csdn.net/*",
+    "https://*.juejin.cn/*",
+    "https://*.jianshu.com/*",
+    "https://*.segmentfault.com/*",
+    "https://*.toutiao.com/*",
+    "https://*.douban.com/*",
+    "https://*.bilibili.com/*",
+    "https://*.weibo.com/*",
+    "https://mp.weixin.qq.com/*",
+    "https://*.zhihu.com/*",
+    "https://*.sspai.com/*",
+    "https://*.xueqiu.com/*",
+    "https://*.eastmoney.com/*",
+    "https://*.wordpress.com/*",
+    "https://*.wordpress.org/*",
+    "https://md.doocs.org/*",
+    "https://*.cnblogs.com/*",
+    "https://*.oschina.net/*",
+    "https://*.51cto.com/*",
+    "https://*.infoq.cn/*",
+    "https://*.baijiahao.baidu.com/*",
+    "https://*.163.com/*",
+    "https://*.cloud.tencent.com/*",
+    "https://*.medium.com/*",
+    "https://*.sohu.com/*",
+    "https://*.aliyun.com/*",
+    "https://*.huaweicloud.com/*",
+    "https://developer.huawei.com/*",
+    "https://*.x.com/*",
+    "https://*.twitter.com/*",
+    "https://qianfan.cloud.baidu.com/*"
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/cose_16.png",
+      "48": "icons/cose_48.png",
+      "128": "icons/cose_128.png"
+    },
+	"default_popup": "src/popup/popup.html",
+    "default_title": "COSE"
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "16": "icons/cose_16.png",
+    "48": "icons/cose_48.png",
+    "128": "icons/cose_128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/inject.js",
+        "src/platforms/*.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
