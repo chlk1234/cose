@@ -51,7 +51,6 @@
       "48": "icons/cose_48.png",
       "128": "icons/cose_128.png"
     },
-	"default_popup": "src/popup/popup.html",
     "default_title": "COSE"
   },
   "background": {
