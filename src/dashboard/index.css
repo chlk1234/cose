@@ -1,0 +1,170 @@
+* {
+  box-sizing: border-box;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1f1f1f;
+  background: #fff;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  height: 100vh;
+}
+.sidebar {
+  border-right: 1px solid #f0f0f0;
+  padding: 12px;
+  background: #fafafa;
+}
+.menu-item {
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: #fff;
+  text-align: center;
+  cursor: pointer;
+}
+.menu-item.logo {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+.submenu {
+  display: none;
+  padding-left: 0;
+  margin-bottom: 12px;
+}
+.submenu.open {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.submenu-btn {
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  cursor: pointer;
+}
+.submenu-btn:hover,
+.menu-item:hover,
+.top-btn:hover,
+.hero-card:hover {
+  border-color: #1677ff;
+}
+.content {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+.topbar {
+  height: 64px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 16px;
+  background: #fff;
+}
+.topbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.top-btn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.plugin-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  background: #f6ffed;
+  color: #389e0d;
+  border: 1px solid #b7eb8f;
+  font-size: 12px;
+}
+.hero-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.hero-card {
+  height: 96px;
+  border: 1px solid #d9d9d9;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 16px;
+}
+.metrics {
+  padding: 16px;
+}
+.metrics-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.metrics-title {
+  font-weight: 600;
+}
+.metrics-range {
+  color: #8c8c8c;
+  font-size: 12px;
+}
+.metrics-cards {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.metric {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+.metric-name {
+  color: #8c8c8c;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.metric-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+.chart {
+  padding: 0 16px 16px;
+}
+canvas {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fff;
+}
+.tooltip {
+  position: absolute;
+  display: none;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  border-radius: 4px;
+  pointer-events: none;
+  transform: translate(-50%, -120%);
+}

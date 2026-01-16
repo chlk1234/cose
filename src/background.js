@@ -66,6 +66,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true // 表示异步响应
 })
 
+chrome.action.onClicked.addListener(async () => {
+  const url = chrome.runtime.getURL('src/dashboard/dist/index.html')
+  await chrome.tabs.create({ url })
+})
+
 async function handleMessage(request, sender) {
   switch (request.type) {
     case 'GET_PLATFORMS':
