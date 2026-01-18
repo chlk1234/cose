@@ -1,7 +1,7 @@
 <template>
   <el-container style="height: 100vh">
     <el-aside width="220px" class="aside">
-      <el-card class="logo" shadow="never">
+      <el-card class="logo" shadow="never" @click="currentView = 'dashboard'" style="cursor: pointer">
         <el-avatar :size="64" src="/cose.png" />
       </el-card>
       <el-menu class="menu" :default-openeds="['publish']">
@@ -18,7 +18,7 @@
             <img class="icon" src="/system/picture-32.png" />
             <span style="margin-left:8px">发布图文</span>
           </el-menu-item>
-          <el-menu-item index="publish:article" @click="onAction('article')">
+          <el-menu-item index="publish:article" @click="currentView = 'editor'">
             <img class="icon" src="/system/article-32.png" />
             <span style="margin-left:8px">发布文章</span>
           </el-menu-item>
@@ -31,7 +31,7 @@
           <img class="icon" src="/system/image-32.png" />
           <span style="margin-left:8px">内容管理</span>
         </el-menu-item>
-        <el-menu-item index="records">
+        <el-menu-item index="records" @click="currentView = 'records'">
           <img class="icon" src="/system/article-32.png" />
           <span style="margin-left:8px">发布记录</span>
         </el-menu-item>
@@ -55,41 +55,199 @@
       </el-header>
 
       <el-main class="main">
-        <div class="hero">
-          <el-button type="primary" plain @click="onAction('video')"><img class="btn-icon" src="/system/video-32.png" />发视频</el-button>
-          <el-button type="primary" plain @click="onAction('article')"><img class="btn-icon" src="/system/article-32.png" />发文章</el-button>
-          <el-button type="primary" plain @click="onAction('image')"><img class="btn-icon" src="/system/picture-32.png" />发图文</el-button>
-          <el-button type="primary" plain @click="onAction('status')"><img class="btn-icon" src="/system/msg-32.png" />发动态</el-button>
+        <!-- Dashboard View -->
+        <div v-if="currentView === 'dashboard'">
+          <div class="hero">
+            <el-button type="primary" plain @click="onAction('video')"><img class="btn-icon" src="/system/video-32.png" />发视频</el-button>
+            <el-button type="primary" plain @click="currentView = 'editor'"><img class="btn-icon" src="/system/article-32.png" />发文章</el-button>
+            <el-button type="primary" plain @click="onAction('image')"><img class="btn-icon" src="/system/picture-32.png" />发图文</el-button>
+            <el-button type="primary" plain @click="onAction('status')"><img class="btn-icon" src="/system/msg-32.png" />发动态</el-button>
+          </div>
+
+          <div class="metrics">
+            <div class="metrics-header">
+              <strong>近30天数据趋势</strong>
+              <span class="range">数据更新于: {{ rangeText }}</span>
+            </div>
+            <div class="metrics-cards">
+              <el-card shadow="never"><div class="m-name">发布数</div><div class="m-val">{{ metrics.publish }}</div></el-card>
+              <el-card shadow="never"><div class="m-name">粉丝数</div><div class="m-val">{{ metrics.fans }}</div></el-card>
+              <el-card shadow="never"><div class="m-name">播放数</div><div class="m-val">{{ metrics.plays }}</div></el-card>
+              <el-card shadow="never"><div class="m-name">阅读数</div><div class="m-val">{{ metrics.reads }}</div></el-card>
+              <el-card shadow="never"><div class="m-name">点赞数</div><div class="m-val">{{ metrics.likes }}</div></el-card>
+              <el-card shadow="never"><div class="m-name">收藏数</div><div class="m-val">{{ metrics.favorites }}</div></el-card>
+            </div>
+          </div>
+
+          <div class="chart-wrap">
+            <canvas ref="canvasRef" width="900" height="320"></canvas>
+            <div class="tooltip" ref="tooltipRef"></div>
+          </div>
         </div>
 
-        <div class="metrics">
-          <div class="metrics-header">
-            <strong>近30天数据趋势</strong>
-            <span class="range">数据更新于: {{ rangeText }}</span>
+        <!-- Editor View -->
+        <div v-if="currentView === 'editor'" class="editor-view">
+          <div class="editor-header">
+            <el-input v-model="article.title" placeholder="请输入文章标题" size="large" class="title-input" />
+            <el-button type="primary" @click="startPublish">发布</el-button>
           </div>
-          <div class="metrics-cards">
-            <el-card shadow="never"><div class="m-name">发布数</div><div class="m-val">{{ metrics.publish }}</div></el-card>
-            <el-card shadow="never"><div class="m-name">粉丝数</div><div class="m-val">{{ metrics.fans }}</div></el-card>
-            <el-card shadow="never"><div class="m-name">播放数</div><div class="m-val">{{ metrics.plays }}</div></el-card>
-            <el-card shadow="never"><div class="m-name">阅读数</div><div class="m-val">{{ metrics.reads }}</div></el-card>
-            <el-card shadow="never"><div class="m-name">点赞数</div><div class="m-val">{{ metrics.likes }}</div></el-card>
-            <el-card shadow="never"><div class="m-name">收藏数</div><div class="m-val">{{ metrics.favorites }}</div></el-card>
+          <div class="editor-content">
+            <el-input
+              v-model="article.content"
+              type="textarea"
+              placeholder="请输入 Markdown 内容..."
+              :rows="20"
+              class="content-input"
+            />
           </div>
         </div>
 
-        <div class="chart-wrap">
-          <canvas ref="canvasRef" width="900" height="320"></canvas>
-          <div class="tooltip" ref="tooltipRef"></div>
+        <!-- Records View -->
+        <div v-if="currentView === 'records'" class="records-view">
+          <div class="records-header">
+            <h3>发布记录</h3>
+            <el-button size="small" @click="clearRecords">清空记录</el-button>
+          </div>
+          <el-table :data="records" style="width: 100%">
+            <el-table-column prop="date" label="时间" width="180" />
+            <el-table-column prop="title" label="标题" />
+            <el-table-column prop="platforms" label="平台" width="300">
+              <template #default="scope">
+                <el-tag v-for="p in scope.row.platforms" :key="p" size="small" style="margin-right: 4px">{{ p }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="scope">
+                <el-tag type="success">成功</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
         </div>
       </el-main>
     </el-container>
+
+    <!-- Publish Dialog -->
+    <el-dialog v-model="publishDialogVisible" title="选择发布平台" width="500px">
+      <div class="platform-list">
+        <el-checkbox-group v-model="selectedPlatforms">
+          <div v-for="p in platforms" :key="p.id" class="platform-item">
+            <el-checkbox :label="p.id">
+              <span class="platform-label">
+                <img :src="p.icon" class="platform-icon-small" v-if="p.icon"/>
+                {{ p.name }}
+              </span>
+            </el-checkbox>
+          </div>
+        </el-checkbox-group>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="publishDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="confirmPublish">确定发布</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </el-container>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-</script>
+import { ElMessage } from 'element-plus'
+import { marked } from 'marked'
+
 const version = ref(chrome.runtime.getManifest().version)
+const currentView = ref('dashboard')
+const publishDialogVisible = ref(false)
+const article = ref({ title: '', content: '' })
+const platforms = ref([])
+const selectedPlatforms = ref([])
+const records = ref([])
+
+// Load platforms
+onMounted(async () => {
+  const resp = await chrome.runtime.sendMessage({ type: 'GET_PLATFORMS' })
+  if (resp && resp.platforms) {
+    platforms.value = resp.platforms.map(p => ({
+      id: p.id,
+      name: p.name,
+      icon: p.icon || `/icons/platforms/${p.id}.png` // Fallback icon path
+    }))
+  }
+  loadRecords()
+})
+
+function loadRecords() {
+  const saved = localStorage.getItem('cose_publish_records')
+  if (saved) {
+    try {
+      records.value = JSON.parse(saved)
+    } catch (e) {
+      records.value = []
+    }
+  }
+}
+
+function saveRecord(record) {
+  records.value.unshift(record)
+  localStorage.setItem('cose_publish_records', JSON.stringify(records.value))
+}
+
+function clearRecords() {
+  records.value = []
+  localStorage.removeItem('cose_publish_records')
+}
+
+function startPublish() {
+  if (!article.value.title || !article.value.content) {
+    ElMessage.warning('请填写标题和内容')
+    return
+  }
+  publishDialogVisible.value = true
+}
+
+async function confirmPublish() {
+  if (selectedPlatforms.value.length === 0) {
+    ElMessage.warning('请至少选择一个平台')
+    return
+  }
+
+  publishDialogVisible.value = false
+  
+  // 1. Notify background to start batch
+  await chrome.runtime.sendMessage({ type: 'START_SYNC_BATCH' })
+
+  // 2. Loop through selected platforms and sync
+  const platformNames = []
+  const htmlContent = marked.parse(article.value.content) // Convert Markdown to HTML
+
+  for (const pid of selectedPlatforms.value) {
+    const p = platforms.value.find(x => x.id === pid)
+    if (p) platformNames.push(p.name)
+    
+    // Send sync message
+    chrome.runtime.sendMessage({
+      type: 'SYNC_TO_PLATFORM',
+      platformId: pid,
+      content: {
+        title: article.value.title,
+        markdown: article.value.content,
+        body: article.value.content,
+        wechatHtml: htmlContent, // For WeChat/Rich Text platforms
+        html: htmlContent // Generic HTML
+      }
+    })
+  }
+
+  // 3. Save record
+  saveRecord({
+    date: new Date().toLocaleString(),
+    title: article.value.title,
+    platforms: platformNames,
+    status: 'success'
+  })
+
+  ElMessage.success('发布任务已开始，请查看各标签页状态')
+}
 
 const COSE_PLATFORM_LOGIN_STATUS = 'cose_platform_login_status'
 function getLoggedCount() {
@@ -107,9 +265,14 @@ const loggedCountDisplay = computed(() => {
 function onAdd() { }
 function onSettings() { }
 function onAction(type) {
-  const map = { video: '发布视频', image: '发布图文', article: '发布文章', status: '发布动态' }
+  if (type === 'article') {
+    currentView.value = 'editor'
+  } else {
+    ElMessage.info('暂未实现该功能')
+  }
 }
 
+// Chart logic (keep existing)
 function fmt(d) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -146,6 +309,7 @@ function updateMetrics(trend) {
 }
 
 function drawTrend(trend) {
+  if (!canvasRef.value) return
   const canvas = canvasRef.value
   const tooltip = tooltipRef.value
   const ctx = canvas.getContext('2d')
@@ -234,7 +398,8 @@ onMounted(() => {
 
   const trend = genTrend(30)
   updateMetrics(trend)
-  drawTrend(trend)
+  // Ensure DOM update before drawing
+  setTimeout(() => drawTrend(trend), 0)
 })
 </script>
 
@@ -256,4 +421,60 @@ onMounted(() => {
 .tooltip { position: fixed; display: none; padding: 6px 8px; font-size: 12px; background: rgba(0,0,0,0.75); color: #fff; border-radius: 4px; pointer-events: none; transform: translate(-50%, -120%); }
 .icon { width: 18px; height: 18px; vertical-align: middle; }
 .btn-icon { width: 20px; height: 20px; vertical-align: -3px; margin-right: 6px; }
+
+/* Editor Styles */
+.editor-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  gap: 16px;
+}
+.editor-header {
+  display: flex;
+  gap: 16px;
+}
+.editor-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.content-input {
+  height: 100%;
+}
+:deep(.el-textarea__inner) {
+  height: 100%;
+  resize: none;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 14px;
+}
+
+/* Records Styles */
+.records-view {
+  padding: 16px;
+}
+.records-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+/* Platform List Styles */
+.platform-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+.platform-item {
+  margin-bottom: 8px;
+}
+.platform-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.platform-icon-small {
+  width: 16px;
+  height: 16px;
+}
 </style>
