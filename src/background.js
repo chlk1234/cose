@@ -1,5 +1,6 @@
 // 平台配置
 import { PLATFORMS, LOGIN_CHECK_CONFIG } from './platforms/index.js'
+// [DISABLED] import { fillAlipayOpenContent } from './platforms/alipayopen.js'
 
 // 当前同步任务的 Tab Group ID
 let currentSyncGroupId = null
@@ -125,6 +126,107 @@ async function checkPlatformLogin(platform) {
     return { loggedIn: false, error: '未配置检测' }
   }
 
+  /* [DISABLED] 支付宝开放平台特殊处理：静默创建后台 tab 检测登录状态
+  if (platform.id === 'alipayopen') {
+    let tempTab = null
+    try {
+      console.log(`[COSE] alipayopen 开始静默检测`)
+      
+      // 先查找已打开的支付宝页面
+      let tabs = await chrome.tabs.query({ url: 'https://open.alipay.com/*' })
+      if (tabs.length === 0) {
+        tabs = await chrome.tabs.query({ url: 'https://*.alipay.com/*' })
+      }
+      
+      let targetTabId
+      if (tabs.length > 0) {
+        // 使用已打开的页面
+        targetTabId = tabs[0].id
+        console.log(`[COSE] alipayopen 使用已打开的页面`)
+      } else {
+        // 创建隐藏窗口中的 tab（用户不可见）
+        console.log(`[COSE] alipayopen 创建隐藏窗口`)
+        const tempWindow = await chrome.windows.create({
+          url: 'https://open.alipay.com/portal/forum/',
+          state: 'minimized',
+          focused: false,
+        })
+        tempTab = { id: tempWindow.tabs[0].id, windowId: tempWindow.id }
+        targetTabId = tempTab.id
+        
+        // 等待页面加载完成（监听 onUpdated 事件）
+        await new Promise((resolve) => {
+          const listener = (tabId, info) => {
+            if (tabId === targetTabId && info.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener)
+              resolve()
+            }
+          }
+          chrome.tabs.onUpdated.addListener(listener)
+          // 超时保护 5 秒
+          setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(listener)
+            resolve()
+          }, 5000)
+        })
+      }
+      
+      // 在页面上下文中调用 API
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: targetTabId },
+        func: () => {
+          return new Promise((resolve) => {
+            fetch('https://developerportal.alipay.com/octopus/service.do', {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+              },
+              body: 'data=%5B%7B%7D%5D&serviceName=alipay.open.developerops.forum.user.query',
+            })
+            .then(response => response.ok ? response.json() : null)
+            .then(data => {
+              if (data?.stat === 'ok' && data?.data?.isLoginUser === 1) {
+                resolve({ nickname: data.data.nickname, avatar: data.data.avatar })
+              } else {
+                resolve(null)
+              }
+            })
+            .catch(() => resolve(null))
+          })
+        }
+      })
+      
+      // 关闭临时创建的窗口
+      if (tempTab && tempTab.windowId) {
+        await chrome.windows.remove(tempTab.windowId)
+        console.log(`[COSE] alipayopen 已关闭隐藏窗口`)
+      }
+      
+      const data = results?.[0]?.result
+      if (data && data.nickname) {
+        console.log(`[COSE] alipayopen 已登录:`, data.nickname)
+        return {
+          loggedIn: true,
+          username: data.nickname,
+          avatar: data.avatar || '',
+        }
+      }
+      
+      console.log(`[COSE] alipayopen 未登录或获取用户信息失败`)
+      return { loggedIn: false }
+    } catch (e) {
+      // 确保关闭临时窗口
+      if (tempTab && tempTab.windowId) {
+        try { await chrome.windows.remove(tempTab.windowId) } catch {}
+      }
+      console.log(`[COSE] alipayopen 检测失败:`, e.message)
+      return { loggedIn: false, error: e.message }
+    }
+  }
+  [DISABLED] */
+
   // 微博特殊处理：通过 cookie 检测登录，通过 fetch HTML 获取用户信息
   if (platform.id === 'weibo') {
     try {
@@ -212,6 +314,7 @@ async function checkPlatformLogin(platform) {
   }
 
   try {
+    console.log(`[COSE] ${platform.id} 开始 API 检测:`, config.api)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 8000)
     const response = await fetch(config.api, {
@@ -221,20 +324,25 @@ async function checkPlatformLogin(platform) {
       signal: controller.signal,
     })
     clearTimeout(timeoutId)
+    console.log(`[COSE] ${platform.id} API 响应状态:`, response.status)
 
     let data = null
     const contentType = response.headers.get('content-type') || ''
     if (contentType.includes('application/json') || contentType.includes('text/plain')) {
       try { data = await response.json() } catch (e) { data = null }
     }
+    console.log(`[COSE] ${platform.id} API 数据:`, data)
 
     const loggedIn = config.checkLogin(data)
+    console.log(`[COSE] ${platform.id} checkLogin 结果:`, loggedIn, 'type:', typeof loggedIn)
     if (loggedIn && config.getUserInfo) {
       const userInfo = config.getUserInfo(data)
+      console.log(`[COSE] ${platform.id} 用户信息:`, userInfo)
       return { loggedIn: true, ...userInfo }
     }
     return { loggedIn: !!loggedIn }
   } catch (error) {
+    console.log(`[COSE] ${platform.id} API 检测失败:`, error.message)
     return { loggedIn: false, error: error.message }
   }
 }
@@ -1110,32 +1218,59 @@ async function syncToPlatform(platformId, content) {
   try {
     let tab
 
-    // 微信公众号需要特殊处理：先打开首页获取 token，再跳转到编辑器
+    // 微信公众号：主动打开首页，然后进入编辑器
     if (platformId === 'wechat') {
-      // 先打开首页
+      // 步骤1：先打开微信公众号首页
+      console.log('[COSE] 打开微信公众号首页')
       tab = await chrome.tabs.create({ url: 'https://mp.weixin.qq.com/', active: false })
       await addTabToSyncGroup(tab.id, tab.windowId)
       await waitForTab(tab.id)
-
-      // 从首页提取 token 并跳转到编辑器
+      
+      // 等待页面加载完成
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      
+      // 步骤2：从页面提取 token
       const [result] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
-          // 从页面 URL 或 DOM 中提取 token
-          const tokenMatch = document.body.innerHTML.match(/token[=:]["']?(\d+)["']?/i)
-          return tokenMatch ? tokenMatch[1] : null
-        },
+          // 从当前 URL 提取
+          const urlMatch = window.location.href.match(/token=(\d+)/)
+          if (urlMatch) return urlMatch[1]
+          
+          // 从页面中的链接提取
+          const links = document.querySelectorAll('a[href*="token"]')
+          for (const link of links) {
+            const match = link.href?.match(/token=(\d+)/)
+            if (match) return match[1]
+          }
+          
+          // 从页面脚本提取
+          const scripts = document.querySelectorAll('script:not([src])')
+          for (const script of scripts) {
+            const content = script.textContent
+            const match = content.match(/token["\']?\s*[:=]\s*["\']?(\d+)["\']?/i)
+            if (match && match[1]) {
+              return match[1]
+            }
+          }
+          
+          return null
+        }
       })
-
+      
       const token = result?.result
-      if (token) {
-        // 跳转到编辑器页面
-        const editorUrl = `https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=1&type=10&token=${token}&lang=zh_CN`
-        await chrome.tabs.update(tab.id, { url: editorUrl })
-        await waitForTab(tab.id)
-      } else {
-        console.log('[COSE] 未能获取微信 token，使用默认页面')
+      
+      if (!token) {
+        console.error('[COSE] 无法从页面获取 token')
+        return { success: false, message: '无法获取微信公众号 token，请确保已登录', tabId: tab.id }
       }
+      
+      // 步骤3：跳转到编辑器页面
+      const editorUrl = `https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&isNew=1&type=10&token=${token}&lang=zh_CN`
+      console.log('[COSE] 获取到 token:', token, '跳转到编辑器')
+      
+      await chrome.tabs.update(tab.id, { url: editorUrl })
+      await waitForTab(tab.id)
     } else if (platformId === 'zhihu') {
       // 知乎：使用导入文档功能上传 md 文件
       tab = await chrome.tabs.create({ url: platform.publishUrl, active: false })
@@ -1766,8 +1901,38 @@ async function syncToPlatform(platformId, content) {
       await new Promise(resolve => setTimeout(resolve, 2000))
 
       return { success: true, message: '已同步到百度云千帆', tabId: tab.id }
-    } else {
-      // 其他平台
+    }
+
+    /* [DISABLED] 支付宝开放平台：使用 ne-engine 富文本编辑器，支持 Markdown 转换
+    if (platformId === 'alipayopen') {
+      // 先打开发布页面
+      tab = await chrome.tabs.create({ url: platform.publishUrl, active: false })
+      await addTabToSyncGroup(tab.id, tab.windowId)
+      await waitForTab(tab.id)
+
+      // 等待页面加载
+      await new Promise(resolve => setTimeout(resolve, 2000))
+
+      const markdownContent = content.markdown || content.body || ''
+      console.log('[COSE] 支付宝开放平台 Markdown 内容长度:', markdownContent?.length || 0)
+
+      // 使用导入的填充函数
+      const fillResult = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: fillAlipayOpenContent,
+        args: [content.title, markdownContent],
+        world: 'MAIN',
+      })
+
+      console.log('[COSE] 支付宝开放平台填充结果:', fillResult[0]?.result)
+
+      // 等待内容处理完成
+      await new Promise(resolve => setTimeout(resolve, 2000))
+
+      return { success: true, message: '已同步到支付宝开放平台', tabId: tab.id }
+    } else [DISABLED] */
+    if (platformId !== 'wechat') {
+      // 其他平台（排除微信，因为微信在上面已经处理）
       let targetUrl = platform.publishUrl
 
       // 开源中国：尝试使用动态用户 ID
@@ -1789,61 +1954,157 @@ async function syncToPlatform(platformId, content) {
 
     // 微信公众号：直接注入 HTML 到编辑器
     if (platformId === 'wechat') {
-      // 等待页面完全加载
-      await new Promise(resolve => setTimeout(resolve, 4000))
-
       // 使用剪贴板 HTML（带完整样式）或降级到 body
       const htmlContent = content.wechatHtml || content.body
       console.log('[COSE] 微信 HTML 内容长度:', htmlContent?.length || 0)
 
-      // 直接注入内容到编辑器（同步函数，避免 async 问题）
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: (title, htmlBody) => {
-          // 填充标题
-          const titleInput = document.querySelector('#title')
-          if (titleInput && title) {
-            titleInput.focus()
-            titleInput.value = title
-            titleInput.dispatchEvent(new Event('input', { bubbles: true }))
-            console.log('[COSE] 标题已填充')
+      // 等待额外时间确保编辑器完全加载
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      // 等待编辑器就绪并注入内容
+      console.log('[COSE] 开始注入微信内容...')
+      console.log('[COSE] 目标 tab ID:', tab.id)
+      
+      let result
+      try {
+        result = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: async (title, htmlBody) => {
+          // 等待元素出现的工具函数
+          const waitForElement = (selector, timeout = 15000) => {
+            return new Promise((resolve) => {
+              const el = document.querySelector(selector)
+              if (el) return resolve(el)
+
+              const observer = new MutationObserver(() => {
+                const el = document.querySelector(selector)
+                if (el) {
+                  observer.disconnect()
+                  resolve(el)
+                }
+              })
+              observer.observe(document.body, { childList: true, subtree: true })
+
+              setTimeout(() => {
+                observer.disconnect()
+                resolve(document.querySelector(selector))
+              }, timeout)
+            })
           }
 
-          // 找到编辑器
-          const editor = document.querySelector('.ProseMirror') || document.querySelector('[contenteditable="true"]')
-          if (editor && htmlBody) {
-            editor.focus()
-
-            // 清空现有占位符内容
-            if (editor.textContent.includes('从这里开始写正文')) {
-              editor.innerHTML = ''
+          try {
+            // 等待编辑器加载完成
+            const editor = await waitForElement('.ProseMirror')
+            if (!editor) {
+              return { success: false, error: '未找到编辑器' }
             }
 
-            // 方法：创建 DataTransfer 并触发 paste 事件
-            const dt = new DataTransfer()
-            dt.setData('text/html', htmlBody)
-            dt.setData('text/plain', htmlBody.replace(/<[^>]*>/g, ''))
+            // 等待标题输入框
+            const titleInput = await waitForElement('#title')
 
-            const pasteEvent = new ClipboardEvent('paste', {
-              bubbles: true,
-              cancelable: true,
-              clipboardData: dt
-            })
+            // 填充标题
+            if (titleInput && title) {
+              titleInput.focus()
+              // 使用 native setter 确保 React/Vue 等框架能检测到变化
+              const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+              if (nativeSetter) {
+                nativeSetter.call(titleInput, title)
+              } else {
+                titleInput.value = title
+              }
+              titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+              titleInput.dispatchEvent(new Event('change', { bubbles: true }))
+              console.log('[COSE] 微信标题已填充:', title)
+            }
 
-            editor.dispatchEvent(pasteEvent)
-            console.log('[COSE] 内容已通过 paste 事件注入')
+            // 稍等一下让标题生效
+            await new Promise(r => setTimeout(r, 300))
+
+            // 填充正文内容
+            if (editor && htmlBody) {
+              editor.focus()
+
+              // 清空现有占位符内容
+              if (editor.textContent.includes('从这里开始写正文')) {
+                editor.innerHTML = ''
+              }
+
+              // 使用 ClipboardEvent + DataTransfer 注入 HTML
+              const dt = new DataTransfer()
+              dt.setData('text/html', htmlBody)
+              dt.setData('text/plain', htmlBody.replace(/<[^>]*>/g, ''))
+
+              const pasteEvent = new ClipboardEvent('paste', {
+                bubbles: true,
+                cancelable: true,
+                clipboardData: dt
+              })
+
+              editor.dispatchEvent(pasteEvent)
+              console.log('[COSE] 微信内容已通过 paste 事件注入')
+
+              // 等待内容渲染
+              await new Promise(r => setTimeout(r, 500))
+
+              // 验证内容是否注入成功
+              const wordCount = editor.textContent?.length || 0
+              if (wordCount === 0) {
+                // 备用方案：直接设置 innerHTML
+                console.log('[COSE] paste 事件未生效，尝试备用方案')
+                editor.innerHTML = htmlBody
+                editor.dispatchEvent(new Event('input', { bubbles: true }))
+              }
+
+              return { 
+                success: true, 
+                wordCount: editor.textContent?.length || 0,
+                titleFilled: titleInput?.value === title
+              }
+            }
+
+            return { success: false, error: '内容为空' }
+          } catch (err) {
+            return { success: false, error: err.message }
           }
         },
         args: [content.title, htmlContent],
         world: 'MAIN',
       })
+      } catch (e) {
+        console.error('[COSE] executeScript 执行失败:', e)
+        return { success: false, message: '脚本执行失败: ' + e.message, tabId: tab.id }
+      }
 
-      // 等待内容注入完成后，点击保存为草稿按钮
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      console.log('[COSE] executeScript 返回数组长度:', result?.length)
+      console.log('[COSE] executeScript 完整返回:', JSON.stringify(result, null, 2))
+      
+      if (!result || result.length === 0) {
+        console.error('[COSE] executeScript 返回空数组')
+        return { success: false, message: '脚本执行失败：无返回值', tabId: tab.id }
+      }
+      
+      const fillResult = result[0].result
+      console.log('[COSE] 微信填充结果:', JSON.stringify(fillResult, null, 2))
+      
+      // 检查 result 结构
+      if (!result || !result[0]) {
+        console.error('[COSE] executeScript 没有返回有效结果')
+        return { success: false, message: '内容注入失败：脚本执行无返回值', tabId: tab.id }
+      }
+      
+      if (!fillResult?.success) {
+        console.error('[COSE] 微信内容填充失败:', fillResult?.error)
+        console.error('[COSE] 完整 result 对象:', result)
+        return { success: false, message: fillResult?.error || '内容填充失败', tabId: tab.id }
+      }
+
+      console.log('[COSE] 微信内容填充成功，字数:', fillResult.wordCount)
+
+      // 等待内容稳定后，点击保存为草稿按钮
+      await new Promise(resolve => setTimeout(resolve, 1000))
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
-          // 查找保存为草稿按钮
           const saveDraftBtn = Array.from(document.querySelectorAll('button'))
             .find(b => b.textContent.includes('保存为草稿'))
           if (saveDraftBtn) {
@@ -3204,6 +3465,95 @@ function fillContentOnPage(content, platformId) {
     // 搜狐号 - 由 syncToPlatform 单独处理，这里跳过
     else if (host.includes('mp.sohu.com')) {
       console.log('[COSE] 搜狐号由 syncToPlatform 处理')
+    }
+    // ModelScope 魔搭社区
+    // 使用仓颉(cangjie)富文本编辑器，需要特殊的事件序列来触发"转为富文本"
+    else if (host.includes('modelscope.cn')) {
+      console.log('[COSE] ModelScope 开始同步...')
+      
+      // 等待页面加载
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      const textarea = document.querySelector('textarea')
+      const cangjieEditor = document.querySelector('[data-cangjie-editable="true"]')
+      
+      if (textarea) {
+        // 聚焦到 textarea
+        textarea.focus()
+        
+        // 触发 paste 事件（这会设置内容并触发"转为富文本"）
+        // 注意：不要预先设置 textarea.value，否则会导致内容重复
+        try {
+          const clipboardData = new DataTransfer()
+          clipboardData.setData('text/plain', contentToFill)
+          const pasteEvent = new ClipboardEvent('paste', {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: clipboardData
+          })
+          textarea.dispatchEvent(pasteEvent)
+        } catch (e) {
+          // 如果 ClipboardEvent 失败，降级到手动设置
+          const textareaSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+          textareaSetter.call(textarea, contentToFill)
+          textarea.dispatchEvent(new InputEvent('input', { 
+            bubbles: true, 
+            data: contentToFill, 
+            inputType: 'insertText'
+          }))
+        }
+        
+        textarea.dispatchEvent(new Event('change', { bubbles: true }))
+        
+        console.log('[COSE] ModelScope 内容填充成功')
+        
+        // 等待"转为富文本"按钮出现并点击
+        await new Promise(resolve => setTimeout(resolve, 800))
+        
+        // 查找并点击"转为富文本"按钮
+        const findAndClickRichTextBtn = () => {
+          // 使用特定选择器
+          const richTextBtn = document.querySelector('[data-testid="menu-item-markdownToDoc"][data-role="markdownToDoc"]')
+          if (richTextBtn) {
+            console.log('[COSE] ModelScope 找到"转为富文本"按钮，点击中...')
+            richTextBtn.click()
+            return true
+          }
+          
+          // 降级：查找文本匹配
+          const allElements = document.querySelectorAll('button, span, div, a, [role="button"]')
+          for (const el of allElements) {
+            const text = el.textContent?.trim()
+            if (text === '转为富文本' || text?.includes('转为富文本')) {
+              console.log('[COSE] ModelScope 找到"转为富文本"按钮（通过文本），点击中...')
+              el.click()
+              return true
+            }
+          }
+          return false
+        }
+        
+        // 尝试多次查找
+        let found = findAndClickRichTextBtn()
+        for (let i = 0; i < 5 && !found; i++) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+          found = findAndClickRichTextBtn()
+        }
+        
+        if (found) {
+          console.log('[COSE] ModelScope 已点击"转为富文本"')
+        } else {
+          console.log('[COSE] ModelScope 未找到"转为富文本"按钮（可能已自动转换）')
+        }
+      } else if (cangjieEditor) {
+        // 降级：直接操作仓颉编辑器
+        cangjieEditor.focus()
+        document.execCommand('selectAll', false, null)
+        document.execCommand('insertText', false, contentToFill)
+        console.log('[COSE] ModelScope 通过 execCommand 填充')
+      } else {
+        console.log('[COSE] ModelScope 未找到编辑器')
+      }
     }
     // 通用处理
     else {
