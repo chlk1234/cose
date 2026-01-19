@@ -4,7 +4,7 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   root: 'src/dashboard',
   plugins: [vue()],
-  publicDir: '../../icons',
+  publicDir: '../../public',
   build: {
     outDir: 'dist',
     emptyOutDir: true

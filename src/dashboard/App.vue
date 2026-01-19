@@ -92,13 +92,7 @@
             <el-button type="primary" @click="startPublish">发布</el-button>
           </div>
           <div class="editor-content">
-            <el-input
-              v-model="article.content"
-              type="textarea"
-              placeholder="请输入 Markdown 内容..."
-              :rows="20"
-              class="content-input"
-            />
+            <div id="vditor" class="content-input"></div>
           </div>
         </div>
 
@@ -151,7 +145,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import Vditor from 'vditor'
+import 'vditor/dist/index.css'
 import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 
@@ -162,6 +158,36 @@ const article = ref({ title: '', content: '' })
 const platforms = ref([])
 const selectedPlatforms = ref([])
 const records = ref([])
+const vditorInstance = ref(null)
+
+// Initialize Vditor when switching to editor view
+watch(currentView, async (newVal, oldVal) => {
+  // Clean up old instance if leaving editor view
+  if (oldVal === 'editor' && vditorInstance.value) {
+    try {
+      vditorInstance.value.destroy()
+    } catch (e) {
+      console.error('Failed to destroy Vditor:', e)
+    }
+    vditorInstance.value = null
+  }
+
+  // Initialize new instance if entering editor view
+  if (newVal === 'editor') {
+    await nextTick()
+    vditorInstance.value = new Vditor('vditor', {
+      height: '100%',
+      cdn: './vditor',
+      cache: {
+        enable: false,
+      },
+      value: article.value.content,
+      input: (value) => {
+        article.value.content = value
+      }
+    })
+  }
+})
 
 // Load platforms
 onMounted(async () => {
@@ -198,6 +224,11 @@ function clearRecords() {
 }
 
 function startPublish() {
+  // Sync content from Vditor before validation
+  if (vditorInstance.value) {
+    article.value.content = vditorInstance.value.getValue()
+  }
+
   if (!article.value.title || !article.value.content) {
     ElMessage.warning('请填写标题和内容')
     return
@@ -268,7 +299,9 @@ function onAction(type) {
   if (type === 'article') {
     currentView.value = 'editor'
   } else {
-    ElMessage.info('暂未实现该功能')
+    // For other types, also open editor but maybe with different presets?
+    // For now, let's just default to editor for all "Publish" actions as requested
+    currentView.value = 'editor'
   }
 }
 
